@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, Job, useJobEvents } from "../api";
+import ImportProgress from "../components/ImportProgress";
 
 const STEPS = ["Import", "Edit", "Preview", "Publish", "Done"];
 
@@ -30,12 +31,31 @@ export default function Studio() {
   useEffect(() => { refresh(); const t = setInterval(refresh, 3000); return () => clearInterval(t); }, [refresh]);
 
   useJobEvents(jobId, (ev) => {
-    const e = ev as { message?: string; status?: string };
+    const e = ev as { message?: string; status?: string; type?: string; payload?: { percent?: number } };
     if (e.message) setStatusMsg(e.message);
+    if (e.type === "download_progress" && e.payload?.percent) {
+      setStatusMsg(e.message || `Downloading… ${Math.round(e.payload.percent)}%`);
+    }
     refresh();
   });
 
+  const importing = job && ["queued", "downloading", "processing"].includes(job.status) && job.stage === "import";
+
   if (!job) return <p>Loading...</p>;
+
+  if (importing) {
+    return (
+      <div>
+        <h1 style={{ marginTop: 0 }}>Importing video</h1>
+        <ImportProgress
+          jobId={jobId}
+          sourceLabel={job.source_url || job.title}
+          platform={job.source_platform}
+          autoNavigate={false}
+        />
+      </div>
+    );
+  }
 
   const spec = job.edit_spec as {
     segments?: { start: number; end: number }[];
@@ -106,10 +126,6 @@ export default function Studio() {
 
       {statusMsg && <div className="status-bar">{statusMsg}</div>}
       {job.last_error && <div className="status-bar" style={{ color: "var(--danger)" }}>{job.last_error}</div>}
-
-      {step === 0 && job.status === "downloading" && (
-        <div className="card"><p>Downloading source video...</p></div>
-      )}
 
       {(step >= 1 || job.status === "ready") && step < 3 && (
         <div className="grid-2">

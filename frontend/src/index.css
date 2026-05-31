@@ -300,3 +300,191 @@ video {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.btn-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.card-link {
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.card-link:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+/* Import progress panel */
+.import-progress {
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.15), 0 8px 32px rgba(99, 102, 241, 0.12);
+  animation: importFadeIn 0.35s ease-out;
+}
+
+.import-progress--failed {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.15), 0 8px 32px rgba(239, 68, 68, 0.08);
+}
+
+@keyframes importFadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.import-progress__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.import-progress__icon-wrap {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99, 102, 241, 0.12);
+  border-radius: 12px;
+}
+
+.import-progress--failed .import-progress__icon-wrap {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.import-progress__icon--spin {
+  animation: spin 0.9s linear infinite;
+  color: var(--accent);
+}
+
+.import-progress__icon--success {
+  color: var(--success);
+}
+
+.import-progress__icon--error {
+  color: var(--danger);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.import-progress__title {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+}
+
+.import-progress__source {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  word-break: break-all;
+}
+
+.import-progress__bar-track {
+  height: 8px;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.import-progress__bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #a78bfa);
+  border-radius: 999px;
+  transition: width 0.4s ease-out;
+}
+
+.import-progress__bar-fill--pulse {
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0%,
+    #a78bfa 50%,
+    var(--accent) 100%
+  );
+  background-size: 200% 100%;
+  animation: progressShimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes progressShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.import-progress__message {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.import-progress__hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.import-progress__steps {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.import-progress__step {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.import-progress__step--active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.import-progress__step--done {
+  color: var(--success);
+}
+
+.import-progress__step--error {
+  color: var(--danger);
+}
+
+.import-progress__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+/* Recent jobs inline progress */
+.job-row-progress {
+  margin-top: 0.5rem;
+  height: 4px;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.job-row-progress__bar {
+  height: 100%;
+  width: 40%;
+  background: var(--warning);
+  border-radius: 999px;
+  animation: jobRowIndeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes jobRowIndeterminate {
+  0% { transform: translateX(-100%); width: 40%; }
+  50% { width: 60%; }
+  100% { transform: translateX(250%); width: 40%; }
+}

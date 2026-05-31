@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from backend.config import ROOT_DIR, get_settings
 
 settings = get_settings()
+
+ProgressCallback = Callable[[str, float | None], None]
+
+_DOWNLOAD_PCT = re.compile(r"\[download\]\s+([\d.]+)%")
 
 
 def _cookies_for_platform(platform: str) -> str | None:
@@ -21,9 +26,12 @@ def _cookies_for_platform(platform: str) -> str | None:
     return str(path) if path.exists() else None
 
 
-def download_from_url(url: str, output_dir: Path) -> dict[str, Any]:
+def download_from_url(
+    url: str,
+    output_dir: Path,
+    on_progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    platform = url  # detect below
     from backend.services.platform_detect import detect_platform
 
     platform = detect_platform(url)
@@ -41,15 +49,46 @@ def download_from_url(url: str, output_dir: Path) -> dict[str, Any]:
         out_template,
         "--write-info-json",
         "--no-playlist",
+        "--newline",
+        "--progress",
         url,
     ]
     cookies = _cookies_for_platform(platform)
     if cookies:
         cmd.extend(["--cookies", cookies])
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if on_progress:
+        on_progress(f"Connecting to {platform}…", 5.0)
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    output_lines: list[str] = []
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        output_lines.append(line)
+        if not on_progress:
+            continue
+        match = _DOWNLOAD_PCT.search(line)
+        if match:
+            pct = float(match.group(1))
+            on_progress(f"Downloading… {pct:.0f}%", min(88.0, 10.0 + pct * 0.78))
+        elif "[Merger]" in line or "Merging" in line:
+            on_progress("Merging audio and video…", 90.0)
+        elif "Downloading webpage" in line or "Extracting URL" in line:
+            on_progress("Fetching video info…", 12.0)
+
+    proc.wait()
+    combined = "".join(output_lines)
     if proc.returncode != 0:
-        raise RuntimeError(proc.stderr or proc.stdout or "yt-dlp download failed")
+        raise RuntimeError(combined or "yt-dlp download failed")
+
+    if on_progress:
+        on_progress("Download complete", 92.0)
 
     source = output_dir / "source.mp4"
     if not source.exists():

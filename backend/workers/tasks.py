@@ -73,13 +73,25 @@ async def download_job(ctx, job_id: int) -> None:
         log_event(db, job, "download_started", "Downloading source video")
 
         out = job_dir(job_id)
+        last_logged_pct = [-1.0]
+
+        def on_download_progress(message: str, percent: float | None) -> None:
+            job.progress_message = message
+            db.commit()
+            if percent is None:
+                return
+            if percent - last_logged_pct[0] >= 4 or last_logged_pct[0] < 0:
+                last_logged_pct[0] = percent
+                log_event(db, job, "download_progress", message, {"percent": percent})
+
         if job.source_type == "url" and job.source_url:
-            meta = download_from_url(job.source_url, out)
+            meta = download_from_url(job.source_url, out, on_progress=on_download_progress)
             job.source_path = meta["source_path"]
             job.source_platform = meta["platform"]
             job.title = meta["title"]
             job.duration_seconds = meta.get("duration")
         elif job.source_type == "upload" and job.source_path:
+            log_event(db, job, "download_progress", "Saving upload…", {"percent": 30})
             source = Path(job.source_path)
             if source.parent != out:
                 dest = out / "source.mp4"
@@ -95,6 +107,9 @@ async def download_job(ctx, job_id: int) -> None:
         source = Path(job.source_path)
         if not job.duration_seconds:
             job.duration_seconds = probe_duration(source)
+
+        log_event(db, job, "download_progress", "Creating preview…", {"percent": 94})
+        update_job_status(db, job, "processing", stage="import")
 
         proxy = out / "proxy.mp4"
         generate_proxy(source, proxy)
