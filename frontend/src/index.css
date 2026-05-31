@@ -51,11 +51,33 @@ input, textarea, select {
 
 .sidebar {
   width: 240px;
+  flex-shrink: 0;
   background: var(--bg-elevated);
   border-right: 1px solid var(--border);
-  padding: 1.5rem 1rem;
+  padding: 1rem 0.75rem;
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
+  transition: width 0.2s ease, padding 0.2s ease;
+}
+
+.sidebar--collapsed {
+  width: 72px;
+  padding: 1rem 0.5rem;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  min-height: 2.5rem;
+}
+
+.sidebar--collapsed .sidebar-header {
+  flex-direction: column;
+  justify-content: center;
   gap: 0.5rem;
 }
 
@@ -63,10 +85,44 @@ input, textarea, select {
   font-weight: 700;
   font-size: 1.25rem;
   padding: 0.5rem 0.75rem;
-  margin-bottom: 1rem;
   background: linear-gradient(135deg, #818cf8, #c084fc);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar--collapsed .sidebar-brand {
+  font-size: 0.95rem;
+  padding: 0.35rem;
+  text-align: center;
+  width: 100%;
+  -webkit-text-fill-color: #818cf8;
+}
+
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+
+.sidebar-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .nav-link {
@@ -77,6 +133,22 @@ input, textarea, select {
   border-radius: 8px;
   color: var(--text-muted);
   transition: all 0.15s;
+  min-width: 0;
+}
+
+.sidebar--collapsed .nav-link {
+  justify-content: center;
+  padding: 0.65rem;
+}
+
+.nav-link__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar--collapsed .nav-link__label {
+  display: none;
 }
 
 .nav-link:hover, .nav-link.active {
@@ -86,8 +158,13 @@ input, textarea, select {
 
 .main-content {
   flex: 1;
+  min-width: 0;
   padding: 2rem;
   max-width: 1400px;
+}
+
+.app-shell--sidebar-collapsed .main-content {
+  max-width: none;
 }
 
 .card {
@@ -199,29 +276,50 @@ input, textarea, select {
 
 .grid-2 {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
   gap: 1.5rem;
+  align-items: start;
+}
+
+.inspector-panel {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 960px) {
-  .grid-2 { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+  .sidebar:not(.sidebar--collapsed) {
+    display: none;
+  }
+  .sidebar--collapsed {
+    display: flex;
+  }
 }
 
 .tabs {
   display: flex;
-  gap: 0.25rem;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.15rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 1rem;
+  padding-bottom: 0.35rem;
 }
 
 .tab {
-  padding: 0.6rem 1rem;
+  padding: 0.45rem 0.7rem;
   background: none;
   border: none;
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  border-radius: 6px 6px 0 0;
+  flex-shrink: 0;
 }
 
 .tab.active {
