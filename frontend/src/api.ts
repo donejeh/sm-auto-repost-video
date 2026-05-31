@@ -31,6 +31,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+export interface JobLogEvent {
+  id: number;
+  event_type: string;
+  message?: string;
+  payload?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface JobListPage {
+  items: Job[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
 export interface Job {
   id: number;
   slug?: string;
@@ -78,9 +94,12 @@ export const api = {
   me: () => request<{ id: number; email: string }>("/auth/me"),
   logout: () => request("/auth/logout", { method: "POST" }),
 
-  listJobs: () => request<Job[]>("/jobs"),
+  listJobs: (page = 1, pageSize = 10) =>
+    request<JobListPage>(`/jobs?page=${page}&page_size=${pageSize}`),
   getJob: (ref: JobRef) => request<Job>(`/jobs/${ref}`),
+  getJobLogs: (ref: JobRef) => request<{ events: JobLogEvent[]; file_log: string }>(`/jobs/${ref}/logs`),
   deleteJob: (ref: JobRef) => request<{ ok: boolean }>(`/jobs/${ref}`, { method: "DELETE" }),
+  retryJob: (ref: JobRef) => request<Job>(`/jobs/${ref}/retry`, { method: "POST" }),
   createFromUrl: (source_url: string) =>
     request<Job>("/jobs", { method: "POST", body: JSON.stringify({ source_url }) }),
   upload: (file: File) => {

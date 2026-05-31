@@ -82,6 +82,30 @@ class JobOut(BaseModel):
         from_attributes = True
 
 
+class JobEventOut(BaseModel):
+    id: int
+    event_type: str
+    message: Optional[str] = None
+    payload: Optional[dict[str, Any]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class JobLogsOut(BaseModel):
+    events: list[JobEventOut]
+    file_log: str = ""
+
+
+class JobListPage(BaseModel):
+    items: list[JobOut]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
 class AccountStatus(BaseModel):
     provider: str
     connected: bool

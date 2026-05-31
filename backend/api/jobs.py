@@ -7,7 +7,7 @@ import json
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -15,7 +15,7 @@ from backend.auth import get_current_user
 from backend.config import get_settings
 from backend.db.models import Job, JobEvent, User
 from backend.db.session import get_db
-from backend.schemas import JobCreateUrl, JobOut, JobUpdate, PublishRequest
+from backend.schemas import JobCreateUrl, JobEventOut, JobListPage, JobLogsOut, JobOut, JobUpdate, PublishRequest
 from backend.services.job_lookup import get_user_job
 from backend.services.platform_detect import detect_platform
 from backend.services.slug import make_initial_slug, refresh_slug_from_title
@@ -51,10 +51,29 @@ def _job_out(job: Job) -> JobOut:
     )
 
 
-@router.get("", response_model=list[JobOut])
-def list_jobs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    jobs = db.query(Job).filter(Job.user_id == user.id).order_by(Job.created_at.desc()).limit(100).all()
-    return [_job_out(j) for j in jobs]
+@router.get("", response_model=JobListPage)
+def list_jobs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    base = db.query(Job).filter(Job.user_id == user.id)
+    total = base.count()
+    jobs = (
+        base.order_by(Job.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    return JobListPage(
+        items=[_job_out(j) for j in jobs],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )
 
 
 @router.post("", response_model=JobOut)
@@ -193,6 +212,76 @@ async def trigger_publish(
     await enqueue_task("publish_job", job.id)
     db.refresh(job)
     return _job_out(job)
+
+
+@router.post("/{job_ref}/retry", response_model=JobOut)
+async def retry_job(
+    job_ref: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    task_name: str | None = None
+    if job.stage == "import" and job.status in ("queued", "failed", "downloading"):
+        task_name = "download_job"
+    elif job.stage in ("preview", "export") and job.status in ("failed", "queued"):
+        task_name = "process_export_job"
+    elif job.stage == "publish" and job.status in ("failed", "queued"):
+        task_name = "publish_job"
+    elif job.status == "queued":
+        task_name = "download_job" if job.stage == "import" else None
+
+    if not task_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot retry job in stage={job.stage} status={job.status}",
+        )
+
+    job.status = "queued"
+    job.last_error = None
+    job.progress_message = "Retry queued…"
+    job.retry_count = (job.retry_count or 0) + 1
+    db.commit()
+    await enqueue_task(task_name, job.id)
+    db.refresh(job)
+    return _job_out(job)
+
+
+@router.get("/{job_ref}/logs", response_model=JobLogsOut)
+def get_job_logs(
+    job_ref: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    events = (
+        db.query(JobEvent)
+        .filter(JobEvent.job_id == job.id)
+        .order_by(JobEvent.id)
+        .all()
+    )
+    log_file = settings.log_dir / "jobs" / f"job_{job.id}.log"
+    file_log = log_file.read_text(encoding="utf-8") if log_file.exists() else ""
+
+    return JobLogsOut(
+        events=[
+            JobEventOut(
+                id=e.id,
+                event_type=e.event_type,
+                message=e.message,
+                payload=json.loads(e.payload_json) if e.payload_json else None,
+                created_at=e.created_at,
+            )
+            for e in events
+        ],
+        file_log=file_log,
+    )
 
 
 @router.post("/{job_ref}/retry/{platform}", response_model=JobOut)
