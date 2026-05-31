@@ -31,7 +31,7 @@ export default function App() {
         }
       >
         <Route index element={<Dashboard />} />
-        <Route path="studio/:id" element={<Studio />} />
+        <Route path="studio/:slug" element={<Studio />} />
         <Route path="history" element={<History />} />
         <Route path="settings" element={<Settings />} />
       </Route>

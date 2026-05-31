@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle2, Download, Film, Loader2, AlertCircle } from "lucide-react";
-import { api, Job, useJobEvents } from "../api";
+import { api, Job, JobRef, studioPath, useJobEvents } from "../api";
 
 const PLATFORM_LABEL: Record<string, string> = {
   instagram: "Instagram",
@@ -21,7 +21,7 @@ function stepState(current: number, index: number, failed: boolean): StepState {
 }
 
 interface ImportProgressProps {
-  jobId: number;
+  jobRef: JobRef;
   sourceLabel?: string;
   platform?: string;
   onDismiss?: () => void;
@@ -30,7 +30,7 @@ interface ImportProgressProps {
 }
 
 export default function ImportProgress({
-  jobId,
+  jobRef,
   sourceLabel,
   platform,
   onDismiss,
@@ -45,7 +45,7 @@ export default function ImportProgress({
 
   const refresh = useCallback(async () => {
     try {
-      const j = await api.getJob(jobId);
+      const j = await api.getJob(jobRef);
       setJob(j);
       if (j.progress_message) setMessage(j.progress_message);
 
@@ -61,7 +61,7 @@ export default function ImportProgress({
         if (!navigated.current) {
           navigated.current = true;
           if (autoNavigate) {
-            setTimeout(() => navigate(`/studio/${jobId}`), 600);
+            setTimeout(() => navigate(studioPath(j)), 600);
           }
         }
         return;
@@ -76,7 +76,7 @@ export default function ImportProgress({
     } catch {
       /* ignore poll errors */
     }
-  }, [jobId, navigate, autoNavigate]);
+  }, [jobRef, navigate, autoNavigate]);
 
   useEffect(() => {
     refresh();
@@ -84,7 +84,7 @@ export default function ImportProgress({
     return () => clearInterval(t);
   }, [refresh]);
 
-  useJobEvents(jobId, (ev) => {
+  useJobEvents(jobRef, (ev) => {
     const e = ev as {
       type?: string;
       message?: string;
@@ -166,7 +166,7 @@ export default function ImportProgress({
           <button type="button" className="btn btn-ghost" onClick={onDismiss}>
             Try again
           </button>
-          <button type="button" className="btn btn-primary" onClick={() => navigate(`/studio/${jobId}`)}>
+          <button type="button" className="btn btn-primary" onClick={() => navigate(job ? studioPath(job) : `/studio/${jobRef}`)}>
             View details
           </button>
         </div>

@@ -16,7 +16,9 @@ from backend.config import get_settings
 from backend.db.models import Job, JobEvent, User
 from backend.db.session import get_db
 from backend.schemas import JobCreateUrl, JobOut, JobUpdate, PublishRequest
+from backend.services.job_lookup import get_user_job
 from backend.services.platform_detect import detect_platform
+from backend.services.slug import make_initial_slug, refresh_slug_from_title
 from backend.services.queue import enqueue_task
 from backend.workers.tasks import job_dir
 
@@ -27,6 +29,7 @@ settings = get_settings()
 def _job_out(job: Job) -> JobOut:
     return JobOut(
         id=job.id,
+        slug=job.slug,
         status=job.status,
         stage=job.stage,
         source_type=job.source_type,
@@ -71,6 +74,7 @@ async def create_from_url(
         source_platform=platform,
         status="queued",
         stage="import",
+        slug=make_initial_slug(),
     )
     db.add(job)
     db.commit()
@@ -99,6 +103,7 @@ async def create_from_upload(
         source_platform="upload",
         status="queued",
         stage="import",
+        slug=refresh_slug_from_title(file.filename, make_initial_slug()),
     )
     db.add(job)
     db.commit()
@@ -116,23 +121,36 @@ async def create_from_upload(
     return _job_out(job)
 
 
-@router.get("/{job_id}", response_model=JobOut)
-def get_job(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    job = db.get(Job, job_id)
-    if not job or job.user_id != user.id:
+@router.get("/{job_ref}", response_model=JobOut)
+def get_job(job_ref: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_out(job)
 
 
-@router.patch("/{job_id}", response_model=JobOut)
+@router.delete("/{job_ref}")
+def delete_job(job_ref: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job_id = job.id
+    db.query(JobEvent).filter(JobEvent.job_id == job_id).delete()
+    db.delete(job)
+    db.commit()
+    shutil.rmtree(job_dir(job_id), ignore_errors=True)
+    return {"ok": True}
+
+
+@router.patch("/{job_ref}", response_model=JobOut)
 def update_job(
-    job_id: int,
+    job_ref: str,
     body: JobUpdate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    job = db.get(Job, job_id)
-    if not job or job.user_id != user.id:
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if body.edit_spec is not None:
         job.set_edit_spec(body.edit_spec)
@@ -145,28 +163,28 @@ def update_job(
     return _job_out(job)
 
 
-@router.post("/{job_id}/export", response_model=JobOut)
+@router.post("/{job_ref}/export", response_model=JobOut)
 async def trigger_export(
-    job_id: int,
+    job_ref: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    job = db.get(Job, job_id)
-    if not job or job.user_id != user.id:
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     await enqueue_task("process_export_job", job.id)
     return _job_out(job)
 
 
-@router.post("/{job_id}/publish", response_model=JobOut)
+@router.post("/{job_ref}/publish", response_model=JobOut)
 async def trigger_publish(
-    job_id: int,
+    job_ref: str,
     body: PublishRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    job = db.get(Job, job_id)
-    if not job or job.user_id != user.id:
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     job.set_publish_targets(body.platforms)
     if body.caption:
@@ -177,15 +195,15 @@ async def trigger_publish(
     return _job_out(job)
 
 
-@router.post("/{job_id}/retry/{platform}", response_model=JobOut)
+@router.post("/{job_ref}/retry/{platform}", response_model=JobOut)
 async def retry_platform(
-    job_id: int,
+    job_ref: str,
     platform: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    job = db.get(Job, job_id)
-    if not job or job.user_id != user.id:
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     job.set_publish_targets([platform])
     db.commit()
@@ -194,18 +212,18 @@ async def retry_platform(
     return _job_out(job)
 
 
-@router.get("/{job_id}/validation")
+@router.get("/{job_ref}/validation")
 def validate_job(
-    job_id: int,
+    job_ref: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     from backend.publishers.validators import validate_export
 
-    job = db.get(Job, job_id)
-    if not job or job.user_id != user.id:
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    export = Path(job.export_path) if job.export_path else job_dir(job_id) / "export.mp4"
+    export = Path(job.export_path) if job.export_path else job_dir(job.id) / "export.mp4"
     warnings: dict[str, list[str]] = {}
     for platform in job.publish_targets() or ["instagram", "facebook", "youtube"]:
         platform_warnings = validate_export(platform, export)
@@ -214,16 +232,17 @@ def validate_job(
     return {"warnings": warnings}
 
 
-@router.get("/{job_id}/media/{kind}")
+@router.get("/{job_ref}/media/{kind}")
 def serve_media(
-    job_id: int,
+    job_ref: str,
     kind: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    job = db.get(Job, job_id)
-    if not job or job.user_id != user.id:
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    job_id = job.id
     mapping = {
         "proxy": job.proxy_path,
         "export": job.export_path,
@@ -236,15 +255,16 @@ def serve_media(
     return FileResponse(path)
 
 
-@router.get("/{job_id}/events")
+@router.get("/{job_ref}/events")
 async def job_events_sse(
-    job_id: int,
+    job_ref: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    job = db.get(Job, job_id)
-    if not job or job.user_id != user.id:
+    job = get_user_job(db, job_ref, user.id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    job_id = job.id
 
     async def stream():
         last_id = 0

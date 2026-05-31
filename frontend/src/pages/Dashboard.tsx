@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Upload, Link2, Loader2 } from "lucide-react";
-import { api, Job } from "../api";
+import { api, Job, jobRef, studioPath } from "../api";
 import ImportProgress from "../components/ImportProgress";
 
 type ActiveImport = {
-  jobId: number;
+  jobRef: string;
   sourceLabel: string;
   platform?: string;
 };
@@ -32,7 +32,7 @@ export default function Dashboard() {
     try {
       const job = await api.createFromUrl(url.trim());
       setActiveImport({
-        jobId: job.id,
+        jobRef: jobRef(job),
         sourceLabel: url.trim(),
         platform: job.source_platform,
       });
@@ -53,7 +53,7 @@ export default function Dashboard() {
     try {
       const job = await api.upload(file);
       setActiveImport({
-        jobId: job.id,
+        jobRef: jobRef(job),
         sourceLabel: file.name,
         platform: "upload",
       });
@@ -75,7 +75,7 @@ export default function Dashboard() {
 
       {activeImport && (
         <ImportProgress
-          jobId={activeImport.jobId}
+          jobRef={activeImport.jobRef}
           sourceLabel={activeImport.sourceLabel}
           platform={activeImport.platform}
           onDismiss={() => setActiveImport(null)}
@@ -119,7 +119,7 @@ export default function Dashboard() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {jobs.map((j) => (
-            <Link key={j.id} to={`/studio/${j.id}`} className="card card-link">
+            <Link key={j.id} to={studioPath(j)} className="card card-link">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong>{j.title || `Job #${j.id}`}</strong>

@@ -18,6 +18,7 @@ from backend.services.crypto import decrypt_json
 from backend.services.downloader import download_from_url
 from backend.services.ffmpeg import export_final, generate_proxy, generate_thumbnail, probe_duration
 from backend.services.job_events import log_event, update_job_status
+from backend.services.slug import refresh_slug_from_title
 
 settings = get_settings()
 
@@ -89,6 +90,8 @@ async def download_job(ctx, job_id: int) -> None:
             job.source_path = meta["source_path"]
             job.source_platform = meta["platform"]
             job.title = meta["title"]
+            if job.slug and meta["title"]:
+                job.slug = refresh_slug_from_title(meta["title"], job.slug)
             job.duration_seconds = meta.get("duration")
         elif job.source_type == "upload" and job.source_path:
             log_event(db, job, "download_progress", "Saving upload…", {"percent": 30})

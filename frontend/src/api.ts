@@ -2,6 +2,16 @@ import React from "react";
 
 const API = "/api";
 
+export type JobRef = string | number;
+
+export function jobRef(job: Pick<Job, "slug" | "id">): string {
+  return job.slug || String(job.id);
+}
+
+export function studioPath(job: Pick<Job, "slug" | "id">): string {
+  return `/studio/${jobRef(job)}`;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     credentials: "include",
@@ -15,11 +25,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || res.statusText);
   }
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return res.json();
 }
 
 export interface Job {
   id: number;
+  slug?: string;
   status: string;
   stage: string;
   source_type: string;
@@ -65,7 +79,8 @@ export const api = {
   logout: () => request("/auth/logout", { method: "POST" }),
 
   listJobs: () => request<Job[]>("/jobs"),
-  getJob: (id: number) => request<Job>(`/jobs/${id}`),
+  getJob: (ref: JobRef) => request<Job>(`/jobs/${ref}`),
+  deleteJob: (ref: JobRef) => request<{ ok: boolean }>(`/jobs/${ref}`, { method: "DELETE" }),
   createFromUrl: (source_url: string) =>
     request<Job>("/jobs", { method: "POST", body: JSON.stringify({ source_url }) }),
   upload: (file: File) => {
@@ -73,26 +88,26 @@ export const api = {
     fd.append("file", file);
     return request<Job>("/jobs/upload", { method: "POST", body: fd });
   },
-  updateJob: (id: number, data: Partial<{ edit_spec: object; caption: string; publish_targets: string[] }>) =>
-    request<Job>(`/jobs/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  exportJob: (id: number) => request<Job>(`/jobs/${id}/export`, { method: "POST" }),
-  publishJob: (id: number, platforms: string[], caption?: string) =>
-    request<Job>(`/jobs/${id}/publish`, {
+  updateJob: (ref: JobRef, data: Partial<{ edit_spec: object; caption: string; publish_targets: string[] }>) =>
+    request<Job>(`/jobs/${ref}`, { method: "PATCH", body: JSON.stringify(data) }),
+  exportJob: (ref: JobRef) => request<Job>(`/jobs/${ref}/export`, { method: "POST" }),
+  publishJob: (ref: JobRef, platforms: string[], caption?: string) =>
+    request<Job>(`/jobs/${ref}/publish`, {
       method: "POST",
       body: JSON.stringify({ platforms, caption }),
     }),
-  retryPlatform: (id: number, platform: string) =>
-    request<Job>(`/jobs/${id}/retry/${platform}`, { method: "POST" }),
-  generateCaptions: (id: number) => request(`/jobs/${id}/generate-captions`, { method: "POST" }),
-  uploadCaptions: (id: number, file: File) => {
+  retryPlatform: (ref: JobRef, platform: string) =>
+    request<Job>(`/jobs/${ref}/retry/${platform}`, { method: "POST" }),
+  generateCaptions: (ref: JobRef) => request(`/jobs/${ref}/generate-captions`, { method: "POST" }),
+  uploadCaptions: (ref: JobRef, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return request(`/jobs/${id}/captions`, { method: "POST", body: fd });
+    return request(`/jobs/${ref}/captions`, { method: "POST", body: fd });
   },
-  uploadAudio: (id: number, file: File) => {
+  uploadAudio: (ref: JobRef, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return request(`/jobs/${id}/audio-overlay`, { method: "POST", body: fd });
+    return request(`/jobs/${ref}/audio-overlay`, { method: "POST", body: fd });
   },
   suggestCaption: (title: string, platform: string) =>
     request<{ available: boolean; caption?: string }>("/ai/suggest-caption", {
@@ -101,21 +116,21 @@ export const api = {
     }),
 
   listAccounts: () => request<AccountStatus[]>("/accounts"),
-  mediaUrl: (jobId: number, kind: string) => `${API}/jobs/${jobId}/media/${kind}`,
+  mediaUrl: (ref: JobRef, kind: string) => `${API}/jobs/${ref}/media/${kind}`,
   connectMeta: () => { window.location.href = `${API}/oauth/meta/connect`; },
   connectGoogle: () => { window.location.href = `${API}/oauth/google/connect`; },
-  validateJob: (id: number) => request<{ warnings: Record<string, string[]> }>(`/jobs/${id}/validation`),
+  validateJob: (ref: JobRef) => request<{ warnings: Record<string, string[]> }>(`/jobs/${ref}/validation`),
 };
 
-export function useJobEvents(jobId: number | null, onEvent: (data: unknown) => void) {
+export function useJobEvents(jobRef: JobRef | null, onEvent: (data: unknown) => void) {
   React.useEffect(() => {
-    if (!jobId) return;
-    const es = new EventSource(`${API}/jobs/${jobId}/events`, { withCredentials: true });
+    if (jobRef == null || jobRef === "") return;
+    const es = new EventSource(`${API}/jobs/${jobRef}/events`, { withCredentials: true });
     es.onmessage = (e) => {
       try {
         onEvent(JSON.parse(e.data));
       } catch { /* ignore */ }
     };
     return () => es.close();
-  }, [jobId, onEvent]);
+  }, [jobRef, onEvent]);
 }

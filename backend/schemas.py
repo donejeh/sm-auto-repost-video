@@ -64,6 +64,7 @@ class JobOut(BaseModel):
     source_url: Optional[str] = None
     source_platform: Optional[str] = None
     title: Optional[str] = None
+    slug: Optional[str] = None
     duration_seconds: Optional[float] = None
     thumbnail_path: Optional[str] = None
     proxy_path: Optional[str] = None

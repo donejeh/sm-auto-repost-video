@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, Job, useJobEvents } from "../api";
+import { api, Job, jobRef, studioPath, useJobEvents } from "../api";
 import ImportProgress from "../components/ImportProgress";
 
 const STEPS = ["Import", "Edit", "Preview", "Publish", "Done"];
@@ -8,29 +9,44 @@ const STEPS = ["Import", "Edit", "Preview", "Publish", "Done"];
 type Tab = "trim" | "crop" | "audio" | "captions" | "watermark";
 
 export default function Studio() {
-  const { id } = useParams();
-  const jobId = Number(id);
+  const { slug: slugParam } = useParams();
+  const routeRef = slugParam || "";
   const navigate = useNavigate();
   const [job, setJob] = useState<Job | null>(null);
   const [tab, setTab] = useState<Tab>("trim");
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
   const [validationWarnings, setValidationWarnings] = useState<Record<string, string[]>>({});
   const saveTimer = useRef<number>();
 
+  const ref = job ? jobRef(job) : routeRef;
+
   const refresh = useCallback(async () => {
-    const j = await api.getJob(jobId);
+    if (!routeRef) return;
+    const j = await api.getJob(routeRef);
     setJob(j);
-    if (j.stage === "edit" || j.status === "ready") setStep(Math.max(step, 1));
-    if (j.export_path || j.stage === "publish") setStep(Math.max(step, 2));
-    if (j.status === "publishing" || j.status === "completed") setStep(3);
-    if (j.status === "completed") setStep(4);
-  }, [jobId, step]);
+    if (j.slug && j.slug !== slugParam) {
+      navigate(studioPath(j), { replace: true });
+    }
+    setStep((prev) => {
+      let next = prev;
+      if (j.stage === "edit" || j.status === "ready") next = Math.max(next, 1);
+      if (j.export_path || j.stage === "publish") next = Math.max(next, 2);
+      if (j.status === "publishing" || j.status === "completed") next = Math.max(next, 3);
+      if (j.status === "completed") next = 4;
+      return next;
+    });
+  }, [routeRef, slugParam, navigate]);
 
-  useEffect(() => { refresh(); const t = setInterval(refresh, 3000); return () => clearInterval(t); }, [refresh]);
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 3000);
+    return () => clearInterval(t);
+  }, [refresh]);
 
-  useJobEvents(jobId, (ev) => {
+  useJobEvents(ref || null, (ev) => {
     const e = ev as { message?: string; status?: string; type?: string; payload?: { percent?: number } };
     if (e.message) setStatusMsg(e.message);
     if (e.type === "download_progress" && e.payload?.percent) {
@@ -39,6 +55,20 @@ export default function Studio() {
     refresh();
   });
 
+  const handleDelete = async () => {
+    if (!job || deleting) return;
+    const label = job.title || job.slug || `job #${job.id}`;
+    if (!window.confirm(`Delete "${label}"? This removes the video and all publish history.`)) return;
+    setDeleting(true);
+    try {
+      await api.deleteJob(ref);
+      navigate("/", { replace: true });
+    } catch (e) {
+      setStatusMsg(e instanceof Error ? e.message : "Delete failed");
+      setDeleting(false);
+    }
+  };
+
   const importing = job && ["queued", "downloading", "processing"].includes(job.status) && job.stage === "import";
 
   if (!job) return <p>Loading...</p>;
@@ -46,9 +76,14 @@ export default function Studio() {
   if (importing) {
     return (
       <div>
-        <h1 style={{ marginTop: 0 }}>Importing video</h1>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h1 style={{ margin: 0 }}>Importing video</h1>
+          <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
+            <Trash2 size={16} /> {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
         <ImportProgress
-          jobId={jobId}
+          jobRef={ref}
           sourceLabel={job.source_url || job.title}
           platform={job.source_platform}
           autoNavigate={false}
@@ -73,7 +108,7 @@ export default function Studio() {
     clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       setSaving(true);
-      await api.updateJob(jobId, { edit_spec: next });
+      await api.updateJob(ref, { edit_spec: next });
       setSaving(false);
     }, 500);
   };
@@ -90,10 +125,10 @@ export default function Studio() {
 
   const applyPreview = async () => {
     setStatusMsg("Rendering preview...");
-    await api.exportJob(jobId);
+    await api.exportJob(ref);
     await refresh();
     try {
-      const v = await api.validateJob(jobId);
+      const v = await api.validateJob(ref);
       setValidationWarnings(v.warnings);
     } catch {
       setValidationWarnings({});
@@ -102,20 +137,25 @@ export default function Studio() {
   };
 
   const publish = async () => {
-    await api.publishJob(jobId, job.publish_targets, job.caption);
+    await api.publishJob(ref, job.publish_targets, job.caption);
     setStep(3);
     await refresh();
   };
 
   const videoSrc = job.status !== "queued" && job.status !== "downloading"
-    ? api.mediaUrl(jobId, step >= 2 ? "preview" : "proxy")
+    ? api.mediaUrl(ref, step >= 2 ? "preview" : "proxy")
     : undefined;
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", gap: "1rem", flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>{job.title || `Studio #${job.id}`}</h1>
-        <span className="badge badge-muted">{saving ? "Saving..." : job.status}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span className="badge badge-muted">{saving ? "Saving..." : job.status}</span>
+          <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
+            <Trash2 size={16} /> {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
       </div>
 
       <div className="stepper">
@@ -197,15 +237,15 @@ export default function Studio() {
                 <label className="label" style={{ marginTop: "0.75rem" }}>Original volume</label>
                 <input className="input" type="range" min={0} max={2} step={0.1} value={spec.audio?.original_volume ?? 1} onChange={(e) => patchSpec({ audio: { ...spec.audio, original_volume: +e.target.value } })} />
                 <label className="label" style={{ marginTop: "0.75rem" }}>Overlay audio (MP3/WAV)</label>
-                <input type="file" accept="audio/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) await api.uploadAudio(jobId, f); refresh(); }} />
+                <input type="file" accept="audio/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) await api.uploadAudio(ref, f); refresh(); }} />
               </>
             )}
 
             {tab === "captions" && (
               <>
-                <button type="button" className="btn btn-ghost" onClick={async () => { await api.generateCaptions(jobId); refresh(); }}>Generate captions (AI)</button>
+                <button type="button" className="btn btn-ghost" onClick={async () => { await api.generateCaptions(ref); refresh(); }}>Generate captions (AI)</button>
                 <label className="label" style={{ marginTop: "0.75rem" }}>Upload SRT</label>
-                <input type="file" accept=".srt" onChange={async (e) => { const f = e.target.files?.[0]; if (f) await api.uploadCaptions(jobId, f); refresh(); }} />
+                <input type="file" accept=".srt" onChange={async (e) => { const f = e.target.files?.[0]; if (f) await api.uploadCaptions(ref, f); refresh(); }} />
               </>
             )}
 
@@ -228,7 +268,7 @@ export default function Studio() {
       {step >= 2 && step < 4 && (
         <div className="card" style={{ marginTop: "1.5rem" }}>
           <h3>Preview & Publish</h3>
-          <video src={api.mediaUrl(jobId, "preview")} controls playsInline style={{ maxWidth: 360, margin: "1rem 0" }} />
+          <video src={api.mediaUrl(ref, "preview")} controls playsInline style={{ maxWidth: 360, margin: "1rem 0" }} />
           {Object.keys(validationWarnings).length > 0 && (
             <div style={{ marginBottom: "1rem", fontSize: "0.85rem", color: "var(--warning)" }}>
               {Object.entries(validationWarnings).map(([platform, msgs]) => (
@@ -237,7 +277,7 @@ export default function Studio() {
             </div>
           )}
           <label className="label">Caption</label>
-          <textarea className="input" rows={3} value={job.caption || ""} onChange={(e) => setJob({ ...job, caption: e.target.value })} onBlur={() => api.updateJob(jobId, { caption: job.caption })} />
+          <textarea className="input" rows={3} value={job.caption || ""} onChange={(e) => setJob({ ...job, caption: e.target.value })} onBlur={() => api.updateJob(ref, { caption: job.caption })} />
           <button type="button" className="btn btn-ghost" style={{ marginTop: "0.5rem" }} onClick={async () => {
             const r = await api.suggestCaption(job.title || "Video", "instagram");
             if (r.caption) setJob({ ...job, caption: r.caption });
@@ -254,7 +294,7 @@ export default function Studio() {
                     ? job.publish_targets.filter((x) => x !== p)
                     : [...job.publish_targets, p];
                   setJob({ ...job, publish_targets: targets });
-                  api.updateJob(jobId, { publish_targets: targets });
+                  api.updateJob(ref, { publish_targets: targets });
                 }}
               >
                 {p === "instagram" && "Instagram Reels"}
@@ -277,7 +317,7 @@ export default function Studio() {
                 <span style={{ color: "var(--danger)" }}>{r.error_message || "Failed"}</span>
               )}
               {!r.success && (
-                <button type="button" className="btn btn-ghost" style={{ marginLeft: "0.5rem", padding: "0.25rem 0.5rem" }} onClick={() => api.retryPlatform(jobId, r.platform).then(refresh)}>Retry</button>
+                <button type="button" className="btn btn-ghost" style={{ marginLeft: "0.5rem", padding: "0.25rem 0.5rem" }} onClick={() => api.retryPlatform(ref, r.platform).then(refresh)}>Retry</button>
               )}
             </div>
           ))}

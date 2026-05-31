@@ -58,6 +58,7 @@ class Job(Base):
     source_url: Mapped[Optional[str]] = mapped_column(String(2048))
     source_platform: Mapped[Optional[str]] = mapped_column(String(32))
     title: Mapped[Optional[str]] = mapped_column(String(512))
+    slug: Mapped[Optional[str]] = mapped_column(String(128), unique=True, index=True)
     duration_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String(1024))
     source_path: Mapped[Optional[str]] = mapped_column(String(1024))
